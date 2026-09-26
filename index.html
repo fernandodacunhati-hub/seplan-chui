@@ -1,0 +1,210 @@
+﻿<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema SEPLAN Inteligente - Chuí/RS</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-4 shadow">
+        <div class="container">
+            <a class="navbar-brand fw-bold" href="#">SEPLAN Inteligente - Prefeitura do Chuí/RS</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <ul class="nav nav-tabs mb-4" id="seplanTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active fw-semibold" id="obras-tab" data-bs-toggle="tab" data-bs-target="#obras" type="button" role="tab">
+                    Análise Automática de Obras
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link fw-semibold" id="captacao-tab" data-bs-toggle="tab" data-bs-target="#captacao" type="button" role="tab" onclick="carregarEditais()">
+                    Hub de Captação Multi-APIs
+                </button>
+            </li>
+        </ul>
+
+        <div class="tab-content" id="seplanTabsContent">
+            <!-- ABA 1: LICENCIAMENTO DE OBRAS -->
+            <div class="tab-pane fade show active" id="obras" role="tabpanel">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-dark text-white">
+                        <h5 class="mb-0">Licenciamento de Obras - Lei 101/1997</h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="formProyecto">
+                            <div class="mb-3">
+                                <label class="form-label font-weight-bold">Zona Urbanística</label>
+                                <select id="zona" class="form-select" required>
+                                    <option value="ZONA_01">ZONA 01 (Comercial / Central)</option>
+                                    <option value="ZONA_02" selected>ZONA 02 (Residencial / Mista)</option>
+                                </select>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Área do Terreno (m²)</label>
+                                    <input type="number" id="area_lote_m2" class="form-control" value="300" required>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Área Construída Térreo (m²)</label>
+                                    <input type="number" id="area_construida_terreo_m2" class="form-control" value="150" required>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Área Total Construída (m²)</label>
+                                    <input type="number" id="area_construida_total_m2" class="form-control" value="200" required>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Recuo Frontal (m)</label>
+                                    <input type="number" step="0.1" id="recuo_frontal_m" class="form-control" value="4.5" required>
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-primary w-100 fw-bold">Analisar Projeto</button>
+                        </form>
+
+                        <div id="resultado" class="mt-4" style="display:none;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ABA 2: HUB DE CAPTAÇÃO MULTI-APIS -->
+            <div class="tab-pane fade" id="captacao" role="tabpanel">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">Hub de Recursos (Transferegov, FNDE, SISMAC, BNDES)</h5>
+                        <button class="btn btn-sm btn-outline-light" onclick="carregarEditais()">Sincronizar APIs</button>
+                    </div>
+                    <div class="card-body">
+                        <div class="row mb-4 align-items-center">
+                            <div class="col-md-3">
+                                <label for="filtroArea" class="form-label fw-bold">Filtrar por Área:</label>
+                            </div>
+                            <div class="col-md-6">
+                                <select id="filtroArea" class="form-select" onchange="carregarEditais()">
+                                    <option value="TODAS">Todas as Fontes & Áreas</option>
+                                    <option value="Infraestrutura">Infraestrutura & Obras (Transferegov / BNDES)</option>
+                                    <option value="Saúde e Saneamento">Saúde & Saneamento (SISMAC / FUNASA)</option>
+                                    <option value="Educação">Educação (FNDE / PAR)</option>
+                                    <option value="Turismo e Cultura">Turismo & Cultura (MTur)</option>
+                                    <option value="Outros">Outras Categorias</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div id="listaEditais" class="row">
+                            <div class="text-center py-4">Sincronizando fontes públicas de recursos...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.getElementById('formProyecto').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const payload = {
+                zona: document.getElementById('zona').value,
+                area_lote_m2: parseFloat(document.getElementById('area_lote_m2').value),
+                area_construida_terreo_m2: parseFloat(document.getElementById('area_construida_terreo_m2').value),
+                area_construida_total_m2: parseFloat(document.getElementById('area_construida_total_m2').value),
+                recuo_frontal_m: parseFloat(document.getElementById('recuo_frontal_m').value)
+            };
+
+            const res = await fetch('http://127.0.0.1:8000/api/v1/analisar-obra', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const data = await res.json();
+            const divRes = document.getElementById('resultado');
+            divRes.style.display = 'block';
+
+            if (data.aprovado) {
+                divRes.className = 'alert alert-success mt-4';
+                divRes.innerHTML = `<h5 class="fw-bold">Projeto APROVADO! (Protocolo #${data.id_registro_banco})</h5><p class="mb-1"><strong>Taxa de Ocupação:</strong> ${data.taxa_ocupacao_calculada}%</p><p class="mb-1"><strong>Índice de Aproveitamento:</strong> ${data.indice_aproveitamento_calculado}</p><hr><ul class="mb-0">${data.erros.map(e => `<li>${e}</li>`).join('')}</ul>`;
+            } else {
+                divRes.className = 'alert alert-danger mt-4';
+                divRes.innerHTML = `<h5 class="fw-bold">Projeto REPROVADO (Protocolo #${data.id_registro_banco})</h5><p class="mb-1"><strong>Taxa de Ocupação:</strong> ${data.taxa_ocupacao_calculada}%</p><p class="mb-1"><strong>Índice de Aproveitamento:</strong> ${data.indice_aproveitamento_calculado}</p><hr><ul class="mb-0">${data.erros.map(e => `<li>${e}</li>`).join('')}</ul>`;
+            }
+        });
+
+        async function carregarEditais() {
+            const area = document.getElementById('filtroArea').value;
+            const container = document.getElementById('listaEditais');
+            container.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary"></div><p class="mt-2 text-muted">Consultando Transferegov, FNDE, SISMAC e BNDES...</p></div>';
+
+            try {
+                const res = await fetch(`http://127.0.0.1:8000/api/v1/captacao-recursos?area=${encodeURIComponent(area)}`);
+                const data = await res.json();
+                
+                container.innerHTML = '';
+                
+                if (data.editais_encontrados.length === 0) {
+                    container.innerHTML = '<div class="alert alert-warning text-center">Nenhum programa encontrado para este filtro no momento.</div>';
+                    return;
+                }
+
+                data.editais_encontrados.forEach(edital => {
+                    const valorFormatado = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(edital.valor_disponivel_brl);
+                    
+                    const editalEscapado = JSON.stringify(edital).replace(/'/g, "&apos;").replace(/"/g, "&quot;");
+
+                    container.innerHTML += `
+                        <div class="col-md-6 col-lg-4 mb-3">
+                            <div class="card h-100 border-primary shadow-sm">
+                                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                                    <small class="fw-bold">${edital.id}</small>
+                                    <span class="badge bg-light text-dark">${edital.area}</span>
+                                </div>
+                                <div class="card-body">
+                                    <div class="mb-2">
+                                        <span class="badge bg-secondary">${edital.fonte || 'Transferegov'}</span>
+                                    </div>
+                                    <h6 class="card-title fw-bold text-dark">${edital.programa}</h6>
+                                    <p class="card-text text-muted small mb-2">Órgão: ${edital.orgao}</p>
+                                    <h5 class="text-success fw-bold my-2">${valorFormatado}</h5>
+                                    <p class="card-text small mb-0">Prazo: <strong>${edital.prazo_submissao}</strong></p>
+                                </div>
+                                <div class="card-footer bg-white border-0">
+                                    <button class="btn btn-outline-primary btn-sm w-100 fw-bold" onclick='salvarProposta(${editalEscapado})'>Elaborar Proposta SEPLAN</button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+            } catch (err) {
+                container.innerHTML = '<div class="alert alert-danger text-center">Erro ao conectar com o serviço de captação de recursos.</div>';
+            }
+        }
+
+        async function salvarProposta(edital) {
+            const payload = {
+                edital_id: edital.id,
+                fonte: edital.fonte || "Transferegov",
+                orgao: edital.orgao,
+                programa: edital.programa,
+                valor_disponivel_brl: edital.valor_disponivel_brl
+            };
+
+            const res = await fetch('http://127.0.0.1:8000/api/v1/salvar-proposta', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+                alert(`Sucesso! O edital ${edital.id} foi vinculado ao banco de propostas da SEPLAN.`);
+            } else {
+                alert("Erro ao salvar a proposta no banco de dados.");
+            }
+        }
+    </script>
+</body>
+</html>

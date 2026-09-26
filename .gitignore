@@ -1,0 +1,4 @@
+﻿.env
+seplan.db
+__pycache__/
+*.pyc
