@@ -1,7 +1,8 @@
 ﻿from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from typing import Optional
 import os
 import random
 import shutil
@@ -9,20 +10,32 @@ import httpx
 
 app = FastAPI(title="SEPLAN Inteligente - Chuí/RS", version="13.0")
 
-os.makedirs("static", exist_ok=True)
-os.makedirs("storage_pdf", exist_ok=True)
-os.makedirs("uploads_ocr", exist_ok=True)
+# Define o diretório base de forma segura para servidores em nuvem
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+STATIC_DIR = os.path.join(BASE_DIR, "static")
+STORAGE_PDF_DIR = os.path.join(BASE_DIR, "storage_pdf")
+UPLOADS_OCR_DIR = os.path.join(BASE_DIR, "uploads_ocr")
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
+os.makedirs(STORAGE_PDF_DIR, exist_ok=True)
+os.makedirs(UPLOADS_OCR_DIR, exist_ok=True)
+
+# Monta os arquivos estáticos com caminho absoluto se a pasta existir
+if os.path.exists(STATIC_DIR):
+    os.makedirs(STATIC_DIR, exist_ok=True)
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 @app.get("/")
 def read_index():
-    return FileResponse("static/index.html")
+    index_path = os.path.join(STATIC_DIR, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    return JSONResponse(status_code=404, content={"erro": "Arquivo index.html não encontrado no servidor."})
 
 BANCO_DADOS_PROPOSTAS = []
 CONTADOR_PROPOSTAS = 1
 ORCAMENTO_PARTICIPATIVO_DEMANDAS = []
 TODOS_RECURSOS_DISPONIVEIS = []
+APLICATIVO_POVO_DEMANDAS = []
 
 @app.post("/api/v1/sincronizar-portais-reais")
 async def sincronizar_portais_reais():
@@ -252,7 +265,7 @@ def dashboard_metricas():
         "volume_total_disponivel": volume_total,
         "por_area": por_secretaria,
         "historico": BANCO_DADOS_PROPOSTAS,
-        "total_demandas_cidadaas": len(ORCAMENTO_PARTICIPATIVO_DEMANDAS)
+        "total_demandas_cidadaas": len(ORCAMENTO_PARTICIPATIVO_DEMANDAS) + len(APLICATIVO_POVO_DEMANDAS)
     }
 
 class PropostaInput(BaseModel):
@@ -279,7 +292,7 @@ def salvar_proposta(dados: PropostaInput):
 
 @app.get("/api/v1/download-minuta-proposta/{id_prop}")
 def download_minuta(id_prop: int):
-    caminho_pdf = f"storage_pdf/minuta_proposta_{id_prop}.pdf"
+    caminho_pdf = os.path.join(STORAGE_PDF_DIR, f"minuta_proposta_{id_prop}.pdf")
     if not os.path.exists(caminho_pdf):
         with open(caminho_pdf, "w") as f:
             f.write(f"Minuta Oficial de Proposta - ID #{id_prop} - Município de Chuí/RS")
@@ -307,9 +320,50 @@ def criar_demanda(dados: DemandaInput):
     ORCAMENTO_PARTICIPATIVO_DEMANDAS.insert(0, nova)
     return {"status": "sucesso", "mensagem": "Demanda cadastrada com sucesso!"}
 
+# --- NOVOS ENDPOINTS DO APLICATIVO DO POVO ---
+class DemandaAppInput(BaseModel):
+    cidadao_nome: Optional[str] = "Cidadão Anônimo"
+    bairro: str
+    secretaria_alvo: str
+    categoria: str
+    descricao: str
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+
+@app.post("/api/v1/app-povo/enviar-demanda")
+def receber_demanda_app(dados: DemandaAppInput):
+    nova_demanda = {
+        "id": len(APLICATIVO_POVO_DEMANDAS) + 1,
+        "cidadao": dados.cidadao_nome,
+        "bairro": dados.bairro,
+        "secretaria_alvo": dados.secretaria_alvo,
+        "categoria": dados.categoria,
+        "descricao": dados.descricao,
+        "localizacao": {
+            "lat": dados.latitude,
+            "lng": dados.longitude
+        },
+        "status": "Registrado - Aguardando Triagem da Secretaria",
+        "data_registro": "2026-09-26"
+    }
+    APLICATIVO_POVO_DEMANDAS.insert(0, nova_demanda)
+    return {
+        "status": "sucesso",
+        "mensagem": "Demanda enviada com sucesso pelo aplicativo do povo!",
+        "protocolo_id": nova_demanda["id"]
+    }
+
+@app.get("/api/v1/app-povo/listar-demandas")
+def listar_demandas_app():
+    return {
+        "total": len(APLICATIVO_POVO_DEMANDAS),
+        "demandas": APLICATIVO_POVO_DEMANDAS
+    }
+# ---------------------------------------------
+
 @app.post("/api/v1/ia/ocr-analisar-edital")
 async def ocr_analisar_edital(file: UploadFile = File(...)):
-    caminho_arquivo = f"uploads_ocr/{file.filename}"
+    caminho_arquivo = os.path.join(UPLOADS_OCR_DIR, file.filename)
     with open(caminho_arquivo, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
         
@@ -340,7 +394,7 @@ def analisar_obra(dados: ObraInput):
     taxa = dados.area_construida_terreo_m2 / dados.area_lote_m2
     aprovado = dados.recuo_frontal_m >= 3.0 and taxa <= 0.70
     id_analise = random.randint(1000, 9999)
-    pdf_path = f"storage_pdf/parecer_obra_{id_analise}.pdf"
+    pdf_path = os.path.join(STORAGE_PDF_DIR, f"parecer_obra_{id_analise}.pdf")
     with open(pdf_path, "w") as f:
         f.write("Laudo Urbanístico")
     return {
@@ -353,11 +407,12 @@ def analisar_obra(dados: ObraInput):
 
 @app.get("/api/v1/download-parecer/{id_analise}")
 def download_parecer(id_analise: int):
-    caminho = f"storage_pdf/parecer_obra_{id_analise}.pdf"
+    caminho = os.path.join(STORAGE_PDF_DIR, f"parecer_obra_{id_analise}.pdf")
     if not os.path.exists(caminho):
         with open(caminho, "w") as f:
             f.write("Laudo")
     return FileResponse(caminho, media_type="application/pdf", filename=f"Parecer_{id_analise}.pdf")
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
