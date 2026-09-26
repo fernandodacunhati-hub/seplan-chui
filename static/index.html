@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
@@ -107,7 +107,6 @@
 
         <!-- CAPTAÇÃO & OCR - COM AS SECRETARIAS DO CHUÍ -->
         <div class="tab-pane fade" id="pills-captacao" role="tabpanel">
-            <!-- PAINEL DE SINCRONIZAÇÃO AUTOMÁTICA -->
             <div class="card p-4 mb-4 bg-primary text-white shadow">
                 <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
                     <div>
@@ -120,7 +119,6 @@
                 </div>
             </div>
 
-            <!-- PAINEL DE UPLOAD IA OCR -->
             <div class="card p-4 mb-4 bg-light border border-secondary">
                 <h5 class="text-secondary mb-2"><i class="bi bi-robot me-2"></i>Leitor Inteligente de Editais por IA (OCR)</h5>
                 <p class="text-muted small mb-3">Envie o PDF de qualquer edital para catalogá-lo na SEPLAN.</p>
@@ -210,7 +208,26 @@ let map = L.map('mapaChuí').setView([-33.6865, -53.3594], 14);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
 L.marker([-33.6865, -53.3594]).addTo(map).bindPopup("<b>Prefeitura Municipal do Chuí</b><br>Centro de Inteligência SEPLAN").openPopup();
 
-document.addEventListener("DOMContentLoaded", () => { carregarDashboard(); carregarEditais(); });
+document.addEventListener("DOMContentLoaded", () => { 
+    carregarDashboard(); 
+    carregarEditais(); 
+    carregarPontosMapa();
+});
+
+async function carregarPontosMapa() {
+    try {
+        const res = await fetch('/api/v1/orcamento-participativo/demandas');
+        const demandas = await res.json();
+        demandas.forEach((d, index) => {
+            let lat = -33.6865 + (index * 0.002) - 0.005;
+            let lng = -53.3594 + (index * 0.002) - 0.005;
+            L.marker([lat, lng]).addTo(map)
+                .bindPopup(`<b>Demanda OP: ${d.bairro}</b><br>${d.descricao}<br><b>Status:</b> ${d.status}`);
+        });
+    } catch (e) {
+        console.log("Erro ao carregar pontos no mapa:", e);
+    }
+}
 
 async function sincronizarPortais() {
     alert("Sincronizando bases federais e estaduais com as secretarias do Chuí/RS...");
@@ -351,6 +368,7 @@ async function criarDemandaOP(event) {
     alert(data.mensagem);
     carregarDemandas();
     carregarDashboard();
+    carregarPontosMapa();
 }
 
 async function salvarProposta(id, fonte, orgao, programa, valor) {
