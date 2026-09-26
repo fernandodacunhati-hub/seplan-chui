@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SEPLAN Inteligente - Chuí/RS</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <!-- Leaflet CSS para Mapas -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { background-color: #f4f6f9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .navbar-brand { font-weight: 700; letter-spacing: 0.5px; }
+        .card { border: none; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .stat-card { border-left: 4px solid #0d6efd; transition: transform 0.2s; }
+        .stat-card:hover { transform: translateY(-3px); }
+        #mapaChuí { height: 380px; border-radius: 10px; }
+    </style>
+</head>
+<body>
+
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary shadow-sm mb-4">
+    <div class="container">
+        <a class="navbar-brand" href="#"><i class="bi bi-building-gear me-2"></i>SEPLAN Inteligente - Chuí/RS</a>
+        <span class="navbar-text text-white-50"><i class="bi bi-patch-check-fill text-success me-1"></i>Secretarias Oficiais & Captação Real</span>
+    </div>
+</nav>
+
+<div class="container mb-5">
+    <ul class="nav nav-pills nav-justified mb-4 card p-2 bg-white flex-row shadow-sm" id="pills-tab" role="tablist">
+        <li class="nav-item"><button class="nav-link active fw-bold" data-bs-toggle="pill" data-bs-target="#pills-dash" type="button" onclick="carregarDashboard()"><i class="bi bi-speedometer2 me-2"></i>Dashboard</button></li>
+        <li class="nav-item"><button class="nav-link fw-bold" data-bs-toggle="pill" data-bs-target="#pills-obra" type="button"><i class="bi bi-rulers me-2"></i>Licenciamento</button></li>
+        <li class="nav-item"><button class="nav-link fw-bold" data-bs-toggle="pill" data-bs-target="#pills-captacao" type="button" onclick="carregarEditais()"><i class="bi bi-cash-coin me-2"></i>Captação & OCR</button></li>
+        <li class="nav-item"><button class="nav-link fw-bold" data-bs-toggle="pill" data-bs-target="#pills-participativo" type="button" onclick="carregarDemandas()"><i class="bi bi-people me-2"></i>Orçamento Participativo</button></li>
+        <li class="nav-item"><button class="nav-link fw-bold" data-bs-toggle="pill" data-bs-target="#pills-geo" type="button" onclick="setTimeout(() => { map.invalidateSize(); }, 200)"><i class="bi bi-map me-2"></i>Mapa GEO</button></li>
+    </ul>
+
+    <div class="tab-content" id="pills-tabContent">
+        <!-- DASHBOARD -->
+        <div class="tab-pane fade show active" id="pills-dash" role="tabpanel">
+            <div class="row g-4 mb-4">
+                <div class="col-md-4">
+                    <div class="card p-3 stat-card bg-white">
+                        <small class="text-muted fw-bold">PROPOSTAS SALVAS</small>
+                        <h3 id="statPropostas" class="text-primary mt-1 mb-0">0</h3>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card p-3 stat-card bg-white" style="border-left-color: #198754;">
+                        <small class="text-muted fw-bold">VOLUME MONITORADO (R$)</small>
+                        <h3 id="statVolume" class="text-success mt-1 mb-0">R$ 0,00</h3>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card p-3 stat-card bg-white" style="border-left-color: #ffc107;">
+                        <small class="text-muted fw-bold">DEMANDAS CIDADÃS (OP)</small>
+                        <h3 id="statDemandas" class="text-warning mt-1 mb-0">0</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="row g-4">
+                <div class="col-md-12">
+                    <div class="card p-4">
+                        <h5 class="card-title text-primary mb-3"><i class="bi bi-list-check me-2"></i>Histórico Recente de Propostas</h5>
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle">
+                                <thead class="table-light"><tr><th>ID</th><th>Programa</th><th>Órgão</th><th>Valor</th><th>Ação</th></tr></thead>
+                                <tbody id="tabelaHistoricoRecente"><tr><td colspan="5" class="text-center py-3 text-muted">Nenhuma proposta vinculada.</td></tr></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- LICENCIAMENTO -->
+        <div class="tab-pane fade" id="pills-obra" role="tabpanel">
+            <div class="row g-4">
+                <div class="col-md-5">
+                    <div class="card p-4">
+                        <h5 class="card-title text-primary mb-3"><i class="bi bi-file-earmark-text me-2"></i>Dados do Projeto</h5>
+                        <form id="formObra" onsubmit="analisarObra(event)">
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">Zona Urbanística</label>
+                                <select class="form-select" id="zona" required>
+                                    <option value="ZRB">ZRB - Zona Residencial Baixa</option>
+                                    <option value="ZCS">ZCS - Zona Comercial e de Serviços</option>
+                                </select>
+                            </div>
+                            <div class="mb-3"><label class="form-label">Área do Lote (m²)</label><input type="number" class="form-control" id="areaLote" value="300" required></div>
+                            <div class="mb-3"><label class="form-label">Área Térreo (m²)</label><input type="number" class="form-control" id="areaTerreo" value="150" required></div>
+                            <div class="mb-3"><label class="form-label">Área Total (m²)</label><input type="number" class="form-control" id="areaTotal" value="150" required></div>
+                            <div class="mb-3"><label class="form-label">Recuo Frontal (m)</label><input type="number" step="0.1" class="form-control" id="recuoFrontal" value="4.0" required></div>
+                            <button type="submit" class="btn btn-primary w-100 fw-bold">Analisar Projeto</button>
+                        </form>
+                    </div>
+                </div>
+                <div class="col-md-7">
+                    <div class="card p-4">
+                        <h5 class="card-title text-primary mb-3">Parecer Técnico</h5>
+                        <div id="resultadoObra" class="text-center text-muted py-5"><p>Preencha os dados ao lado para gerar o laudo.</p></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- CAPTAÇÃO & OCR - COM AS SECRETARIAS DO CHUÍ -->
+        <div class="tab-pane fade" id="pills-captacao" role="tabpanel">
+            <!-- PAINEL DE SINCRONIZAÇÃO AUTOMÁTICA -->
+            <div class="card p-4 mb-4 bg-primary text-white shadow">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                    <div>
+                        <h4 class="fw-bold mb-1"><i class="bi bi-cloud-arrow-down-fill me-2"></i>Sincronizador de Recursos - Chuí/RS</h4>
+                        <p class="mb-0 text-white-50 small">Varre as bases oficiais federais e estaduais filtrando oportunidades para as secretarias municipais.</p>
+                    </div>
+                    <button class="btn btn-warning text-dark fw-bold px-4 py-2 shadow-sm" onclick="sincronizarPortais()">
+                        <i class="bi bi-arrow-repeat me-1"></i> Sincronizar Tudo Agora
+                    </button>
+                </div>
+            </div>
+
+            <!-- PAINEL DE UPLOAD IA OCR -->
+            <div class="card p-4 mb-4 bg-light border border-secondary">
+                <h5 class="text-secondary mb-2"><i class="bi bi-robot me-2"></i>Leitor Inteligente de Editais por IA (OCR)</h5>
+                <p class="text-muted small mb-3">Envie o PDF de qualquer edital para catalogá-lo na SEPLAN.</p>
+                <form onsubmit="enviarEditalOCR(event)" class="d-flex gap-2 align-items-center">
+                    <input type="file" class="form-control" id="arquivoEdital" accept=".pdf" required>
+                    <button type="submit" class="btn btn-secondary fw-bold text-nowrap"><i class="bi bi-cpu me-1"></i>Processar com IA</button>
+                </form>
+            </div>
+
+            <div class="card p-4">
+                <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+                    <h5 class="card-title text-primary mb-0"><i class="bi bi-radar me-2"></i>Radar de Captação por Secretaria</h5>
+                    <div class="d-flex gap-2 flex-wrap">
+                        <select class="form-select w-auto fw-bold" id="filtroEsfera" onchange="carregarEditais()">
+                            <option value="TODAS">🏛️ Todas as Esferas</option>
+                            <option value="FEDERAL">🇧🇷 Federal</option>
+                            <option value="ESTADUAL">⭐ Estadual</option>
+                        </select>
+                        <select class="form-select w-auto fw-bold" id="filtroSecretaria" onchange="carregarEditais()">
+                            <option value="TODAS">🏢 Todas as Secretarias do Chuí</option>
+                            <option value="Secretaria Geral de Governo">Secretaria Geral de Governo</option>
+                            <option value="Secretaria Municipal de Administração e Fazenda">Secretaria Municipal de Administração e Fazenda</option>
+                            <option value="Secretaria Municipal de Agricultura">Secretaria Municipal de Agricultura</option>
+                            <option value="Secretaria Municipal de Assistência Social">Secretaria Municipal de Assistência Social</option>
+                            <option value="Secretaria Municipal de Educação">Secretaria Municipal de Educação</option>
+                            <option value="Secretaria Municipal de Esporte, Cultura e Turismo">Secretaria Municipal de Esporte, Cultura e Turismo</option>
+                            <option value="Secretaria Municipal de Indústria e Comércio">Secretaria Municipal de Indústria e Comércio</option>
+                            <option value="Secretaria Municipal de Obras e Serviços Urbanos">Secretaria Municipal de Obras e Serviços Urbanos</option>
+                            <option value="Secretaria Municipal de Planejamento">Secretaria Municipal de Planejamento</option>
+                            <option value="Secretaria Municipal de Saúde">Secretaria Municipal de Saúde</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="listaEditais" class="row g-4"><div class="text-center py-5 text-muted"><p>Clique em <strong>"Sincronizar Tudo Agora"</strong> acima para carregar os recursos reais.</p></div></div>
+            </div>
+        </div>
+
+        <!-- ORÇAMENTO PARTICIPATIVO -->
+        <div class="tab-pane fade" id="pills-participativo" role="tabpanel">
+            <div class="row g-4">
+                <div class="col-md-5">
+                    <div class="card p-4">
+                        <h5 class="card-title text-primary mb-3"><i class="bi bi-chat-square-text me-2"></i>Nova Demanda Cidadã</h5>
+                        <form onsubmit="criarDemandaOP(event)">
+                            <div class="mb-3"><label class="form-label">Bairro / Região</label><input type="text" class="form-control" id="opBairro" placeholder="Ex: Centro, Vila América..." required></div>
+                            <div class="mb-3">
+                                <label class="form-label">Secretaria Responsável</label>
+                                <select class="form-select" id="opCategoria">
+                                    <option value="Secretaria Municipal de Obras e Serviços Urbanos">Secretaria Municipal de Obras e Serviços Urbanos</option>
+                                    <option value="Secretaria Municipal de Esporte, Cultura e Turismo">Secretaria Municipal de Esporte, Cultura e Turismo</option>
+                                    <option value="Secretaria Municipal de Saúde">Secretaria Municipal de Saúde</option>
+                                    <option value="Secretaria Municipal de Educação">Secretaria Municipal de Educação</option>
+                                </select>
+                            </div>
+                            <div class="mb-3"><label class="form-label">Descrição da Demanda</label><textarea class="form-control" id="opDescricao" rows="3" placeholder="Descreva a obra ou melhoria necessária..." required></textarea></div>
+                            <button type="submit" class="btn btn-warning fw-bold w-100 text-dark">Enviar para o Orçamento Participativo</button>
+                        </form>
+                    </div>
+                </div>
+                <div class="col-md-7">
+                    <div class="card p-4">
+                        <h5 class="card-title text-primary mb-3">Demandas da Comunidade para PPA / LOA</h5>
+                        <div id="listaDemandasOP" class="d-flex flex-column gap-3">
+                            <div class="text-center py-3 text-muted">Nenhuma demanda registrada.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- MAPA GEO -->
+        <div class="tab-pane fade" id="pills-geo" role="tabpanel">
+            <div class="card p-4">
+                <h5 class="card-title text-primary mb-3"><i class="bi bi-geo-alt me-2"></i>Mapa Multissetorial de Fronteira - Chuí/RS</h5>
+                <p class="text-muted small">Visualização cartográfica integrada de obras e equipamentos públicos.</p>
+                <div id="mapaChuí"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+let map = L.map('mapaChuí').setView([-33.6865, -53.3594], 14);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+L.marker([-33.6865, -53.3594]).addTo(map).bindPopup("<b>Prefeitura Municipal do Chuí</b><br>Centro de Inteligência SEPLAN").openPopup();
+
+document.addEventListener("DOMContentLoaded", () => { carregarDashboard(); carregarEditais(); });
+
+async function sincronizarPortais() {
+    alert("Sincronizando bases federais e estaduais com as secretarias do Chuí/RS...");
+    const res = await fetch('/api/v1/sincronizar-portais-reais', { method: 'POST' });
+    const data = await res.json();
+    alert(data.mensagem);
+    carregarEditais();
+    carregarDashboard();
+}
+
+async function carregarDashboard() {
+    const res = await fetch('/api/v1/dashboard-metricas');
+    const data = await res.json();
+    document.getElementById('statPropostas').innerText = data.total_propostas;
+    document.getElementById('statVolume').innerText = `R$ ${data.volume_total_disponivel.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`;
+    document.getElementById('statDemandas').innerText = data.total_demandas_cidadaas;
+
+    let html = '';
+    (data.historico || []).forEach(p => {
+        html += `<tr><td><strong>#PROP-${p.id}</strong></td><td>${p.programa}</td><td><small>${p.orgao}</small></td><td class="text-success fw-bold">R$ ${p.valor.toLocaleString('pt-BR')}</td><td><a href="/api/v1/download-minuta-proposta/${p.id}" target="_blank" class="btn btn-sm btn-outline-primary">PDF</a></td></tr>`;
+    });
+    document.getElementById('tabelaHistoricoRecente').innerHTML = html || '<tr><td colspan="5" class="text-center text-muted">Nenhuma proposta registrada.</td></tr>';
+}
+
+async function analisarObra(event) {
+    event.preventDefault();
+    const dados = {
+        zona: document.getElementById('zona').value,
+        area_lote_m2: parseFloat(document.getElementById('areaLote').value),
+        area_construida_terreo_m2: parseFloat(document.getElementById('areaTerreo').value),
+        area_construida_total_m2: parseFloat(document.getElementById('areaTotal').value),
+        recuo_frontal_m: parseFloat(document.getElementById('recuoFrontal').value)
+    };
+
+    const res = await fetch('/api/v1/analisar-obra', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(dados)
+    });
+    const data = await res.json();
+    const corBadge = data.aprovado ? 'success' : 'danger';
+    const textoStatus = data.aprovado ? 'APROVADO' : 'REPROVADO';
+
+    document.getElementById('resultadoObra').innerHTML = `
+        <div class="alert alert-${corBadge} fw-bold">${textoStatus}</div>
+        <p class="text-start mb-1"><strong>Taxa de Ocupação:</strong> ${(data.taxa_ocupacao_calculada * 100).toFixed(1)}%</p>
+        <p class="text-start mb-1"><strong>Índice de Aproveitamento:</strong> ${data.indice_aproveitamento_calculado}</p>
+        <p class="text-start mb-3"><strong>Parecer Técnico:</strong> ${data.parecer_tecnico}</p>
+        <a href="${data.pdf_url}" target="_blank" class="btn btn-outline-primary w-100"><i class="bi bi-file-earmark-pdf me-2"></i>Baixar Laudo Oficial (PDF)</a>
+    `;
+}
+
+async function carregarEditais() {
+    const secretaria = document.getElementById('filtroSecretaria').value;
+    const esfera = document.getElementById('filtroEsfera').value;
+    const res = await fetch(`/api/v1/captacao-recursos?secretaria=${encodeURIComponent(secretaria)}&esfera=${esfera}`);
+    const data = await res.json();
+
+    let html = '';
+    (data.editais || []).forEach(e => {
+        let prazosHtml = (e.analise_pdf?.prazos || []).map(p => `<span class="badge bg-light text-dark border me-1 mb-1">${p}</span>`).join('');
+        let docsHtml = (e.analise_pdf?.documentos || []).map(d => `<li><small class="text-muted">${d}</small></li>`).join('');
+        let linkEditalHtml = e.link_edital ? `<a href="${e.link_edital}" target="_blank" class="btn btn-sm btn-outline-dark fw-bold mb-3 w-100"><i class="bi bi-box-arrow-up-right me-1"></i>Acessar Portal / Edital Oficial</a>` : '';
+
+        html += `
+            <div class="col-md-6">
+                <div class="card h-100 p-4 border-start border-4 border-primary shadow-sm">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="badge bg-secondary">${e.secretaria}</span>
+                        <span class="badge bg-primary">${e.esfera}</span>
+                    </div>
+                    <h5 class="text-dark fw-bold mb-1">${e.programa}</h5>
+                    <p class="text-muted small mb-2"><i class="bi bi-bank me-1"></i>${e.orgao} | <strong>Fonte:</strong> ${e.fonte}</p>
+                    <p class="small text-secondary mb-3">${e.descricao}</p>
+                    
+                    ${linkEditalHtml}
+
+                    <div class="bg-light p-3 rounded mb-3 border">
+                        <p class="small mb-1"><strong>Parecer Preliminar:</strong> <span class="text-success">${e.analise_pdf?.parecer_preliminar || 'Disponível'}</span></p>
+                        <p class="small mb-1"><strong>Contrapartida:</strong> ${e.analise_pdf?.contrapartida || 'Não informada'}</p>
+                        <div class="mt-2"><strong>Prazos:</strong><br>${prazosHtml}</div>
+                        <div class="mt-2"><strong>Documentos Necessários:</strong><ul class="mb-0 ps-3">${docsHtml}</ul></div>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center mt-auto pt-2 border-top">
+                        <h4 class="text-success mb-0 fw-bold">R$ ${e.valor.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</h4>
+                        <button class="btn btn-success fw-bold px-4" onclick="salvarProposta('${e.id}', '${e.fonte}', '${e.orgao}', '${e.programa.replace(/'/g, "\\'")}', ${e.valor})">
+                            <i class="bi bi-check2-circle me-1"></i>Salvar Proposta
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    document.getElementById('listaEditais').innerHTML = html || '<div class="text-center text-muted py-4">Nenhum edital encontrado para esta secretaria.</div>';
+}
+
+async function enviarEditalOCR(event) {
+    event.preventDefault();
+    const input = document.getElementById('arquivoEdital');
+    if (!input.files[0]) return;
+    
+    const formData = new FormData();
+    formData.append("file", input.files[0]);
+
+    alert("Processando edital via IA...");
+    const res = await fetch('/api/v1/ia/ocr-analisar-edital', { method: 'POST', body: formData });
+    const data = await res.json();
+    alert(data.mensagem);
+    carregarEditais();
+}
+
+async function carregarDemandas() {
+    const res = await fetch('/api/v1/orcamento-participativo/demandas');
+    const demandas = await res.json();
+    let html = '';
+    demandas.forEach(d => {
+        html += `
+            <div class="p-3 bg-light rounded border">
+                <div class="d-flex justify-content-between"><span class="badge bg-primary">${d.bairro}</span><small class="text-muted">${d.categoria}</small></div>
+                <p class="mb-1 mt-2">${d.descricao}</p>
+                <div class="d-flex justify-content-between align-items-center mt-2"><small class="text-success fw-bold"><i class="bi bi-check-circle me-1"></i>${d.status}</small><span class="badge bg-warning text-dark">👍 ${d.votos} Votos</span></div>
+            </div>
+        `;
+    });
+    document.getElementById('listaDemandasOP').innerHTML = html || '<div class="text-center text-muted py-3">Nenhuma demanda cadastrada.</div>';
+}
+
+async function criarDemandaOP(event) {
+    event.preventDefault();
+    const dados = {
+        bairro: document.getElementById('opBairro').value,
+        categoria: document.getElementById('opCategoria').value,
+        descricao: document.getElementById('opDescricao').value
+    };
+    const res = await fetch('/api/v1/orcamento-participativo/criar', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(dados)
+    });
+    const data = await res.json();
+    alert(data.mensagem);
+    carregarDemandas();
+    carregarDashboard();
+}
+
+async function salvarProposta(id, fonte, orgao, programa, valor) {
+    await fetch('/api/v1/salvar-proposta', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ edital_id: id, fonte: fonte, orgao: orgao, programa: programa, valor_disponivel_brl: valor })
+    });
+    alert("Proposta registrada com sucesso!");
+    carregarDashboard();
+}
+</script>
+</body>
+</html>
